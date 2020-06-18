@@ -1,0 +1,23 @@
+name: OrientationEstimation
+channels:
+  - conda-forge
+  - anaconda
+dependencies:
+  - python>=3.5
+  - python-wget
+  - scipy
+  - numpy
+  - pillow
+  - mkl
+  - pytorch
+  - matplotlib
+  - scikit-image
+  - tensorboard
+  - tensorboardx
+  - tqdm
+  - python-lmdb
+  - pip
+  - imageio
+  - imageio-ffmpeg
+  - pip:
+      - pyrender

@@ -1,0 +1,6 @@
+logs
+saved_logs
+*__pycache__*
+.nfs*
+images
+plots

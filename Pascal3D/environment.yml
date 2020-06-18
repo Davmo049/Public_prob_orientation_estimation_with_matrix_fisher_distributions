@@ -1,0 +1,14 @@
+name: pascal3d_dataset
+channels:
+  - conda-forge
+  - anaconda
+dependencies:
+  - python>=3.5
+  - python-wget
+  - scipy
+  - numpy
+  - pillow
+  - mkl
+  - pytorch
+  - matplotlib
+  - scikit-image
