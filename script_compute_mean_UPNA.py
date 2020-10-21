@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import torch
 from resnet import resnet101, ResnetHead
 from Pascal3D import Pascal3D
+from ModelNetSo3 import ModelNetSo3
 import logger
 import os
 import loss
@@ -52,16 +53,16 @@ def get_axis_max_likelihood(rot_axis, mat):
 
 
 def visualize_probs():
-    net_path = 'logs/UPNA/upna'
+    net_path = 'logs/upna/upna_int_norm'
     image_dir_out = 'plots/probs'
-    dataset_location = 'datasets'
+    dataset_location = 'datasets' # TODO update to dataset path
     device = torch.device('cpu')
     dataset = UPNA.UPNA(dataset_location)
     dataset_vis = dataset.get_eval()
 
     base = resnet101()
     model = ResnetHead(base, 1, 0, 512, 9)
-    loggers = logger.Logger(net_path, Pascal3D.PascalClasses, 0, dataset, load=True)
+    loggers = logger.Logger(net_path, ModelNetSo3.ModelNetSo3Classes, load=True)
     loggers.load_network_weights(119, model, device)
     model.eval()
 
@@ -80,7 +81,7 @@ def visualize_probs():
 
     errors = []
     load_pkl = False
-    if load_pkl:
+    if load_pkl and os.path.exists('UPNA_errors.pkl'):
         with open('UPNA_errors.pkl', 'rb') as f:
             errors = pickle.load(f)
     else:
@@ -96,8 +97,9 @@ def visualize_probs():
             R_est = loss.batch_torch_A_to_R(out).detach().cpu().view(3,3).numpy()
             err = loss.angle_error_np(R_gt, R_est)
             errors.append(err)
-            with open('UPNA_errors.pkl', 'wb') as f:
-                pickle.dump(errors, f)
+            print(err)
+        with open('UPNA_errors.pkl', 'wb') as f:
+            pickle.dump(errors, f)
     print(np.mean(errors))
     print(np.median(errors))
     plt.hist(errors,100)

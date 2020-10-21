@@ -111,7 +111,7 @@ def aet_to_R(a,e,t):
     return R
 
 def main():
-    ds_path = 'datasets' # TODO change to correct directiory
+    ds_path = 'datasets' # change to where datasets are stored
     ds = Pascal3DRendered(ds_path, 224)
     for i in range(100):
         im, ext, cls, hard, intr, cad = ds[i]

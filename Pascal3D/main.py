@@ -106,7 +106,7 @@ def visualize_rotation(im, angle, principal_point, camera, distance, class_idx, 
 import tqdm
 def main():
     real = Pascal3D.Pascal3D(use_warp=False)
-    ds_path = 'datasets' # TODO change to right folder
+    ds_path = 'datasets' # TODO change to where datasets are stored
     syn = Pascal3D_render.Pascal3DRendered(ds_path, 224)
     real_sampler = torch.utils.data.sampler.RandomSampler(real.get_train(), replacement=False)
     syn_size = int(0.2*len(syn))

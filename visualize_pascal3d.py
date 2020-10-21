@@ -49,19 +49,63 @@ def proj_axis(extrinsic, intrinsic):
     return points
 
 
-
-
-def visualize_random_errors():
-    net_path = 'logs/Pascal/pascal_train_full_synthetic'
-    image_dir_out = 'plots/random_errors'
-    dataset_location = 'datasets'
+def get_cpu_stats():
+    net_path = 'logs/pascal/pascal_new_norm_full'
+    dataset_location = 'datasets' # TODO update with dataset path
     device = torch.device('cpu')
     dataset = Pascal3D.Pascal3D(train_all=True)
     dataset_vis = dataset.get_eval()
 
     base = resnet101()
-    model = ResnetHead(base, 12, 32, 512, 9)
-    loggers = logger.Logger(net_path, Pascal3D.PascalClasses, 0, dataset, load=True)
+    model = ResnetHead(base, 13, 32, 512, 9)
+
+    loggers = logger.Logger(net_path, Pascal3D.PascalClasses, load=True)
+    loggers.load_network_weights(119, model, device)
+    model.eval()
+    np.random.seed(9001)
+    dataloader = torch.utils.data.DataLoader(
+            dataset_vis,
+            shuffle=True,
+            batch_size=1,
+            drop_last=False)
+    err_per_class = {}
+    print(len(dataloader))
+    for i, batch in enumerate(dataloader):
+        if i % 10 == 0:
+            print(i)
+        image, extrinsic, class_idx_cpu, hard, intrinsic, _ = batch
+        extrinsic_np = extrinsic[0].numpy()
+        intrinsic_np = intrinsic[0].numpy()
+        im_np = image[0].numpy().transpose(1,2,0)
+        R_gt = extrinsic[0, :3,:3].numpy()
+        out = model(image, class_idx_cpu).view(-1,3,3)
+        R_est = loss.batch_torch_A_to_R(out).detach().cpu().view(3,3).numpy()
+        err = loss.angle_error_np(R_gt, R_est)
+        k = class_idx_cpu.numpy()[0]
+        errs = err_per_class.get(k, [])
+        errs.append(err)
+        err_per_class[k] = errs
+
+    for k in range(13):
+        if k in err_per_class:
+            print(k)
+            print(np.median(err_per_class[k]))
+
+
+
+
+
+def visualize_random_errors():
+    net_path = 'logs/pascal/pascal_new_norm_full'
+    image_dir_out = 'plots/random_errors'
+    dataset_location = 'datasets' # TODO update with dataset path
+    device = torch.device('cpu')
+    dataset = Pascal3D.Pascal3D(train_all=True)
+    dataset_vis = dataset.get_eval()
+
+    base = resnet101()
+    model = ResnetHead(base, 13, 32, 512, 9)
+    loggers = logger.Logger(net_path, Pascal3D.PascalClasses, load=True)
     loggers.load_network_weights(119, model, device)
     model.eval()
 
@@ -87,7 +131,7 @@ def visualize_random_errors():
         intrinsic_np = intrinsic[0].numpy()
         im_np = image[0].numpy().transpose(1,2,0)
         R_gt = extrinsic[0, :3,:3].numpy()
-        out = model(image, class_idx_cpu-1).view(-1,3,3)
+        out = model(image, class_idx_cpu).view(-1,3,3)
         R_est = loss.batch_torch_A_to_R(out).detach().cpu().view(3,3).numpy()
         err = loss.angle_error_np(R_gt, R_est)
 
@@ -130,26 +174,92 @@ def get_axis_max_likelihood(rot_axis, mat):
 
 
 
-def visualize_probs():
-    net_path = 'logs/Pascal/pascal_train_full_synthetic'
-    image_dir_out = 'plots/probs'
-    dataset_location = 'datasets'
+def go_through_visualizations():
+    net_path = 'logs/pascal/pascal_new_norm_full'
+    dataset_location = 'datasets' # TODO update with dataset path
     device = torch.device('cpu')
     dataset = Pascal3D.Pascal3D(train_all=True)
     dataset_vis = dataset.get_eval()
 
     base = resnet101()
-    model = ResnetHead(base, 12, 32, 512, 9)
-    loggers = logger.Logger(net_path, Pascal3D.PascalClasses, 0, dataset, load=True)
+    model = ResnetHead(base, 13, 32, 512, 9)
+    loggers = logger.Logger(net_path, Pascal3D.PascalClasses, load=True)
+    loggers.load_network_weights(119, model, device)
+    model.eval()
+
+    np.random.seed(9001)
+    idx = np.arange(1100,len(dataset_vis), 1)
+    sampler = ListSampler(idx)
+    dataloader = torch.utils.data.DataLoader(
+            dataset_vis,
+            sampler=sampler,
+            batch_size=1,
+            drop_last=False)
+
+    im_weight = 4
+    for i, (idx, batch) in enumerate(zip(idx, dataloader)):
+        print(idx)
+        fig = plt.figure(figsize=(10,3), dpi=100*4)
+        gs = fig.add_gridspec(im_weight+3, 1)
+        im_ax = fig.add_subplot(gs[:im_weight, 0])
+        image, extrinsic, class_idx_cpu, hard, intrinsic, _ = batch
+        extrinsic_np = extrinsic[0].numpy()
+        intrinsic_np = intrinsic[0].numpy()
+        im_np = image[0].numpy().transpose(1,2,0)
+        R_gt = extrinsic[0, :3,:3].numpy()
+        out = model(image, class_idx_cpu).view(-1,3,3)
+        R_est = loss.batch_torch_A_to_R(out).detach().cpu().view(3,3).numpy()
+        err = loss.angle_error_np(R_gt, R_est)
+
+        F = out[0].detach().numpy()
+        extr_est = np.copy(extrinsic_np)
+        extr_est[:3,:3] = R_est
+
+        points_est = proj_axis(extr_est, intrinsic_np)
+        points_true = proj_axis(extrinsic_np, intrinsic_np)
+
+
+        im_ax.imshow(im_np)
+        for p, c in zip(points_est[:,1:].transpose(), ['r','g','b']):
+            x = [points_est[0,0], p[0]]
+            y = [points_est[1,0], p[1]]
+            im_ax.plot(x,y,c,linewidth=5)
+
+        for p, c in zip(points_true[:,1:].transpose(), ['m','y','c']):
+            x = [points_true[0,0], p[0]]
+            y = [points_true[1,0], p[1]]
+            im_ax.plot(x,y,c,linewidth=2)
+        im_ax.axes.get_xaxis().set_visible(False)
+        im_ax.axes.get_yaxis().set_visible(False)
+        for rot_axis, c in zip(range(3), ['r', 'g', 'b']):
+            x, y = get_prob(rot_axis, np.matmul(F.transpose(), R_est))
+            ml = get_axis_max_likelihood(rot_axis, np.matmul(F.transpose(), R_gt))
+            ax = fig.add_subplot(gs[rot_axis+im_weight, 0])
+            ax.plot(x,y, c)
+            ax.plot([ml, ml], [0.0, 1.0], 'k')
+        plt.show()
+ 
+
+def visualize_probs():
+    net_path = 'logs/pascal/pascal_new_norm_full'
+    image_dir_out = 'plots/probs'
+    dataset_location = 'datasets' # TODO update with dataset path
+    device = torch.device('cpu')
+    dataset = Pascal3D.Pascal3D(train_all=True)
+    dataset_vis = dataset.get_eval()
+
+    base = resnet101()
+    model = ResnetHead(base, 13, 32, 512, 9)
+    loggers = logger.Logger(net_path, Pascal3D.PascalClasses, load=True)
     loggers.load_network_weights(119, model, device)
     model.eval()
 
     if not os.path.exists(image_dir_out):
         os.makedirs(image_dir_out)
+
     np.random.seed(9001)
-    # idx = np.arange(len(dataset_vis))
-    # np.random.shuffle(idx)
-    idx = [2822, 8446, 6171, 7001]
+    # idx = np.arange(1000,len(dataset_vis), 1)
+    idx = [4008, 1126, 9024, 11159]
     sampler = ListSampler(idx)
     dataloader = torch.utils.data.DataLoader(
             dataset_vis,
@@ -159,21 +269,18 @@ def visualize_probs():
 
     im_weight = 4
     fig = plt.figure(figsize=(10,3), dpi=100*4)
-    gs = fig.add_gridspec(im_weight+3, 1, hspace=0.5)
+    gs = fig.add_gridspec(im_weight+3, 4)
     for i, (idx, batch) in enumerate(zip(idx, dataloader)):
-        print(idx)
-        fig = plt.figure(figsize=(10,3), dpi=100*4)
-        gs = fig.add_gridspec(im_weight+3, 4)
-        # i = 0
+        print(i)
         if i == 4:
-            break
+           break
         im_ax = fig.add_subplot(gs[:im_weight, i])
         image, extrinsic, class_idx_cpu, hard, intrinsic, _ = batch
         extrinsic_np = extrinsic[0].numpy()
         intrinsic_np = intrinsic[0].numpy()
         im_np = image[0].numpy().transpose(1,2,0)
         R_gt = extrinsic[0, :3,:3].numpy()
-        out = model(image, class_idx_cpu-1).view(-1,3,3)
+        out = model(image, class_idx_cpu).view(-1,3,3)
         R_est = loss.batch_torch_A_to_R(out).detach().cpu().view(3,3).numpy()
         j = Image.fromarray((im_np*255).astype(np.uint8))
         image_out = os.path.join(image_dir_out, 'im_prob_{}.png'.format(i))
@@ -216,15 +323,17 @@ def visualize_probs():
             ax = fig.add_subplot(gs[rot_axis+im_weight, i])
             ax.plot(x,y, c)
             ax.plot([ml, ml], [0.0, 1.0], 'k')
-        # plt.show()
+    plt.show()
     # image_out = os.path.join(image_dir_out, 'im_prob.pdf')
     # plt.savefig(image_out)
 
 
 
 def main():
+    # go_through_visualizations()
     visualize_random_errors()
     visualize_probs()
+    # get_cpu_stats()
 
 
 if __name__ == '__main__':

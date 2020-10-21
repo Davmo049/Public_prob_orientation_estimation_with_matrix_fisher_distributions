@@ -69,16 +69,16 @@ def get_axis_max_likelihood(rot_axis, mat):
 
 
 def visualize_probs():
-    net_path = 'logs/Modelnet/train'
+    net_path = 'logs/modelnet/modelnet_int_norm'
     image_dir_out = 'plots/modelnet_probs'
-    dataset_location = 'datasets'
+    dataset_location = 'datasets' # TODO update with dataset path
     device = torch.device('cpu')
     dataset = ModelNetSo3.ModelNetSo3()
     dataset_vis = dataset.get_eval()
 
     base = resnet101()
     model = ResnetHead(base, 10, 32, 512, 9)
-    loggers = logger.Logger(net_path, ModelNetSo3.ModelNetSo3Classes, 0, dataset, load=True)
+    loggers = logger.Logger(net_path, ModelNetSo3.ModelNetSo3Classes, load=True)
     loggers.load_network_weights(49, model, device)
     model.eval()
 
@@ -97,7 +97,7 @@ def visualize_probs():
     # fig = plt.figure(figsize=(10,3), dpi=100*4)
     im_weight = 4
     # gs = fig.add_gridspec(im_weight+3, 4, hspace=0.5)
-    epochs = [0, 10, 20, 30, 40, 49]
+    epochs = [0, 20, 40, 49]
     for i, (idx, batch) in enumerate(zip(idx, dataloader)):
         for ep in epochs:
             print(ep)

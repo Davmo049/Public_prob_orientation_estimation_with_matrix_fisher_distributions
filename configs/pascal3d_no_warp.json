@@ -1,0 +1,9 @@
+{
+    "type": "pascal",
+    "data_aug": false,
+    "embedding_dim": 32,
+    "synthetic_data": false,
+    "warp": false,
+    "pascal_train": false
+}
+

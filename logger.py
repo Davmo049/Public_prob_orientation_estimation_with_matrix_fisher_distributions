@@ -12,27 +12,27 @@ import os
 import io
 from PIL import Image
 import pickle
+import json
 
 class Logger():
-    def __init__(self, logger_path, class_enum, visualizations_per_epoch, dataset, load=False):
+    def __init__(self, logger_path, class_enum, config=None, load=False):
         self.logger_path = logger_path
         if not load and os.path.exists(logger_path):
             raise Exception("rerunning old training")
         elif not os.path.exists(logger_path):
             os.makedirs(logger_path)
             os.makedirs(os.path.join(logger_path, 'saved_weights'))
+            if config is not None:
+                with open(os.path.join(logger_path, 'config.json'), 'w') as f:
+                    json.dump(config.json_serialize(), f)
         self.class_enum = class_enum
-        self.samples_to_visualize = []
-        for subset in [dataset.get_train(), dataset.get_eval()]:
-            indices = np.floor(np.arange(0, visualizations_per_epoch)*(len(subset)-1)/(visualizations_per_epoch-1)).astype(np.int)
-            self.samples_to_visualize.append(indices)
         self.tb_summary_writer = tensorboardX.SummaryWriter(os.path.join(self.logger_path, 'logging'))
 
     def get_train_logger(self, epoch, verbose=False):
-        return SubsetLogger(self, 'train', self.samples_to_visualize[0], epoch, verbose)
+        return SubsetLogger(self, 'train', epoch, verbose)
 
     def get_validation_logger(self, epoch, verbose=False):
-        return SubsetLogger(self, 'validation', self.samples_to_visualize[1], epoch, verbose)
+        return SubsetLogger(self, 'validation', epoch, verbose)
 
     def save_network(self, epoch, model):
         path = os.path.join(self.logger_path, 'saved_weights', 'state_dict_{}.pkl'.format(epoch))
@@ -45,10 +45,9 @@ class Logger():
         model.load_state_dict(state_dict)
 
 class SubsetLogger():
-    def __init__(self, logger, subset_name, indices, epoch, verbose):
+    def __init__(self, logger, subset_name, epoch, verbose):
         self.logger = logger
         self.subset_name = subset_name
-        self.indices = indices
         self.epoch = epoch
         self.verbose = verbose
         self.angular_errors = []
@@ -66,30 +65,10 @@ class SubsetLogger():
         self.hard += list(hard.cpu().numpy())
         self.sum_loss += torch.sum(losses).detach().cpu().numpy()
         self.num_samples_loss += losses.shape[0]
-        if self.verbose:
-            for idx in self.indices: # quick loop, not optimal implementation but it's easy.
-                if idx >= current_idx and idx < len(self.angular_errors):
-                    offset = idx - current_idx
-                    im = images[offset].detach().cpu().numpy().transpose(1,2,0)
-                    R_gt_instance = R_gt[offset].detach().cpu().numpy()
-                    R_est_instance = R_est[offset].detach().cpu().numpy()
-                    F = prob_params[offset].detach().cpu().numpy()
-                    fig_gt = generate_axis_plot(im, R_gt_instance)
-                    self.logger.tb_summary_writer.add_figure('{}/fig_{}_gt'.format(self.subset_name, idx), fig_gt, self.epoch)
-                    fig_est = generate_axis_plot(im, R_est_instance)
-                    self.logger.tb_summary_writer.add_figure('{}/fig_{}_estimate'.format(self.subset_name, idx), fig_est, self.epoch)
-
-                    diag_matmul = np.matmul(F.transpose(), R_est_instance).reshape(-1)[::4]
-                    diag_matmul = np.clip(diag_matmul, -0.9, np.inf)
-                    conf = np.log(1.9+diag_matmul)/5
-
-                    fig_conf = generate_axis_plot(im, R_est_instance, confidence=conf)
-                    self.logger.tb_summary_writer.add_figure('{}/fig_{}_confidence'.format(self.subset_name, idx), fig_conf, self.epoch)
-
 
     def finish(self):
         tb_writer = self.logger.tb_summary_writer
-        print('epoch {}: median {}'.format(self.epoch, float(self.sum_loss/self.num_samples_loss)))
+        print('epoch {}: loss {}'.format(self.epoch, float(self.sum_loss/self.num_samples_loss)))
         tb_writer.add_scalar('{}/loss'.format(self.subset_name), float(self.sum_loss/self.num_samples_loss), self.epoch)
         easy_stats, all_stats = get_errors(self.angular_errors, self.class_indices, self.hard, self.logger.class_enum)
         x = [(all_stats, 'all')]

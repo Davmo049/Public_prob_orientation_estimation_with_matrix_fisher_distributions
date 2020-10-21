@@ -1,12 +1,12 @@
-import loadlibrary
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+import torch_math
 from np_math import numdiff
 
 from geometric_utils import torch_batch_quaternion_to_rot_mat, torch_batch_euler_to_rotation
 from geometric_utils import numpy_quaternion_to_rot_mat
-
+import torch_norm_factor
 
 
 epsilon_log_hg = 1e-10
@@ -22,7 +22,7 @@ def f_log_hg_torch_approx(S):
     ret = smax + c - c*torch.exp(-d*smax)
     return ret
 
-class class_log_hg_approx(torch.autograd.Function):
+class class_log_hg_rough_approx(torch.autograd.Function):
     # same as log_hg_torch_approx for forward, custom backward to get slightly better gradients
     @staticmethod
     def forward(ctx, S):
@@ -47,7 +47,7 @@ class class_log_hg_approx(torch.autograd.Function):
         weight = weight / torch.sum(weight, dim=1).unsqueeze(1)
         weight = weight[:, :3]
         return weight * (grad).unsqueeze(1)
-log_hg_torch_approx = class_log_hg_approx.apply
+log_hg_torch_rough_approx = class_log_hg_rough_approx.apply
 
 def np_log_hg_approx_backward(v):
     tmp = np.zeros(4)
@@ -57,6 +57,17 @@ def np_log_hg_approx_backward(v):
     weight = weight / np.sum(weight)
     return weight[:3]
 
+def np_log_hg_approx_forward(v_i):
+    # note v_i sorted from smallest to largest
+    smax = v_i[2]
+    v = v_i[:2] / (smax + epsilon_log_hg)
+    vsum = np.sum(v)
+    sndeg = 0.03125-vsum*0.02083+(0.0104+0.0209*(v[0]-v[1])**2)*vsum**2
+    quot = ((3-vsum)/4)
+    d = 2*sndeg / quot
+    c = -quot/d
+    ret = smax + c - c*np.exp(-d*smax)
+    return ret
 
 class SinhExprClass(torch.autograd.Function):
     # computes x/sinh(x), custom backward/forward to get numerical stability in x==0
@@ -154,11 +165,8 @@ def test_log_sinh_expr():
 
 _global_svd_fail_counter = 0
 
-
-def KL_approx(A, R, dbg=False, overreg=1.05):
+def KL_approx_rough(A, R, overreg=1.05):
     global _global_svd_fail_counter
-    # A is bx3x3
-    # R is bx3x3
     try:
         U,S,V = torch.svd(A)
         with torch.no_grad(): # sign can only change if the 3rd component of the svd is 0, then the sign does not matter
@@ -169,16 +177,38 @@ def KL_approx(A, R, dbg=False, overreg=1.05):
         Diag[:,0] = 2*(S[:, 0]+S[:, 1])
         Diag[:,1] = 2*(S[:, 0]-s3sign*S[:, 2])
         Diag[:,2] = 2*(S[:, 1]-s3sign*S[:, 2])
-        lhg = log_hg_torch_approx(Diag)
+        lhg = log_hg_torch_rough_approx(Diag)
         log_norm_factor = lhg + offset
         log_exponent = -torch.matmul(A.view(-1,1,9), R.view(-1, 9,1)).view(-1)
         _global_svd_fail_counter = max(0, _global_svd_fail_counter-1)
-        # regularize slightly more than normalizing factor to avoid very large outputs and divergence
         return log_exponent + overreg*log_norm_factor
+    except RuntimeError as e:
+        print(e)
+        _global_svd_fail_counter += 10 # we want to allow a few failures, but not consistent ones
+        if _global_svd_fail_counter > 100: # we seem to get these problems consistently
+            for i in range(A.shape[0]):
+                print(A[i])
+            raise e
+        else:
+            return None
 
-    # I know this is ugly, but during training svd does not converge, instead raising errors
-    # I think this behaviour was removed by overregularizing.
-    # From a performance point of view this should not cause a underestimation of angle error since we give the identity rotation when svd fails to converge.
+
+
+def KL_Fisher(A, R, overreg=1.05):
+    # A is bx3x3
+    # R is bx3x3
+    global _global_svd_fail_counter
+    try:
+        U,S,V = torch.svd(A)
+        with torch.no_grad(): # sign can only change if the 3rd component of the svd is 0, then the sign does not matter
+            rotation_candidate = torch.matmul(U,V.transpose(1,2))
+            s3sign = torch.det(rotation_candidate)
+        S_sign = S.clone()
+        S_sign[:, 2] *= s3sign
+        log_normalizer = torch_norm_factor.logC_F(S_sign)
+        log_exponent = -torch.matmul(A.view(-1,1,9), R.view(-1, 9,1)).view(-1)
+        _global_svd_fail_counter = max(0, _global_svd_fail_counter-1)
+        return log_exponent + overreg*log_normalizer
     except RuntimeError as e:
         _global_svd_fail_counter += 10 # we want to allow a few failures, but not consistent ones
         if _global_svd_fail_counter > 100: # we seem to have gotten these problems more often than 10% of batches
@@ -186,8 +216,8 @@ def KL_approx(A, R, dbg=False, overreg=1.05):
                 print(A[i])
             raise e
         else:
+            print('SVD returned NAN fail counter = {}'.format(_global_svd_fail_counter))
             return None
-
 
 def KL_approx_sinh(A, R):
     # shared global variable, ugly but these two should not be used at the same time.
@@ -282,38 +312,6 @@ def numpy_hg_approx2(x,y,z):
     return z + c*(np.log(1+np.exp(-d*z))-np.log(2))
 
 
-def KL_real(A, R):
-    MAX = 75
-    hg = lambda v: loadlibrary.hg(MAX, 2, 0.5, 2, v)
-    loghg = lambda v: np.log(hg(v))
-    u,s,vt = np.linalg.svd(A)
-
-    rotation_candidate = np.matmul(u,vt)
-    s3sign = np.linalg.det(rotation_candidate)
-    offset = s3sign*s[2] - s[0] - s[1]
-    Diag = np.zeros(s.shape)
-    Diag[0] = 2*(s[0]+s[1])
-    Diag[1] = 2*(s[0]-s3sign*s[2])
-    Diag[2] = 2*(s[1]-s3sign*s[2])
-    lhg = loghg(Diag)
-    log_norm_factor = lhg + offset
-    log_exponent = - np.dot(A.flatten(), R.flatten())
-    return log_exponent + log_norm_factor
-
-
-def get_KL_diff(A, R):
-    f = lambda x: KL_real(x, R)
-    return numdiff(A, f)
-
-
-def get_log_hg(v):
-    MAX_1 = 75
-    hg = lambda v: loadlibrary.hg(MAX_1, 2, 0.5, 2.0, v)
-    loghg = lambda v: np.log(hg(v))
-    print(loghg(v))
-    return numdiff(v, loghg)
-
-
 class log_sinh_expr_class(torch.autograd.Function):
     # computes log(sinh(x)/x), custom backward/forward to get numerical stability in x==0 and for large |x|
     @staticmethod
@@ -334,46 +332,3 @@ class log_sinh_expr_class(torch.autograd.Function):
         return ret*grad_output*sign_in
 
 log_sinh_expr = log_sinh_expr_class.apply
-
-def test_grad_properties():
-    # import scipy.special
-    a_mag = 20
-    s = np.array([0.99,1.0,1.01])
-    d = np.array([2*(s[0]+s[1]), 2*(s[0]-s[2]), 2*(s[1]-s[2])])
-    S = np.diag(s)
-    loghg_grad = get_log_hg(d)
-    q1 = np.random.normal(size=(4))
-    q1 /= np.linalg.norm(q1)
-    q2 = np.random.normal(size=(4))
-    q2 /= np.linalg.norm(q2)
-    R1 = numpy_quaternion_to_rot_mat(q1)
-    R2 = numpy_quaternion_to_rot_mat(q2).transpose()
-    aerr= 30*3.1/180
-    Rerr = np.array([[1.0, 0,0],
-                     [0,   np.cos(aerr), np.sin(aerr)],
-                     [0,   -np.sin(aerr), np.cos(aerr)]])
-    print(Rerr)
-    R = np.matmul(np.matmul(Rerr, R1), R2)
-    A = np.matmul(np.matmul(R1, S), R2)
-    print(A)
-    Rt = torch.tensor(R).unsqueeze(0)
-    Ats = torch.tensor(A, requires_grad=True)
-    At = Ats.unsqueeze(0)
-
-
-    y = KL_approx_sinh(At*a_mag, Rt)
-    y.backward()
-    Ats.grad = None
-    print('At:\n{}'.format(At))
-    y = KL_approx(At*a_mag, Rt)
-    print('y: {}'.format(y))
-    y.backward()
-    print("approx grad:\n {}".format(Ats.grad))
-    # y = get_KL_diff(A, R)
-    # print("numerical grad:\n {}".format(y))
-
-
-if __name__ == '__main__':
-    test_sinh_expr()
-    test_log_sinh_expr()
-    test_grad_properties()

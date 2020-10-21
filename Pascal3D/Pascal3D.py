@@ -150,7 +150,7 @@ def pascal3d_get_class(data):
         return pascal_3d_str_enum_map[class_str.lower()]
     except KeyError:
         failed_parse_strings.add(class_str.lower())
-        print("unknown class: " + class_str)
+        # print("unknown class: " + class_str)
         raise PascalParseError("could not parse class")
 
 
@@ -186,7 +186,6 @@ def pascal3d_get_angle(data):
 def pascal3d_get_point(data):
     viewpoint = get_mat_element(data['viewpoint'])
     px = float(get_mat_element(viewpoint['px']))
-    py = float(get_mat_element(viewpoint['py']))
     py = float(get_mat_element(viewpoint['py']))
     return [px, py]
 
@@ -273,6 +272,7 @@ def create_json_annotations(location, json_annotation_path):
             dict_data = mat_data_to_dict_data(mat_data, folder)
             total_parses += len(dict_data[DICT_OBJECT_LIST])
             if len(dict_data[DICT_OBJECT_LIST]) == 0:
+                # print(folder_dir + '/' + filename)
                 failed_parses += 1
             if len(dict_data[DICT_OBJECT_LIST]) > 1:
                 pass
@@ -510,11 +510,12 @@ def show_crop_bounding_box(img, bbox):
 
 import shutil
 class Pascal3D():
-    def __init__(self, dataset_location=None, image_size=224, train_all=False, use_warp=True):
+    def __init__(self, dataset_location=None, image_size=224, train_all=False, use_warp=True, voc_train=False):
         print('start init pascal')
         self.image_out_size = image_size
+        self.voc_train = voc_train
         if dataset_location==None:
-            dataset_location = 'datasets' # change to directory where data is
+            dataset_location = '/home/tobii.intra/dmon/datasets'
         self.location = os.path.join(dataset_location, DATASET_FOLDER_NAME)
         if not os.path.exists(self.location):
             raise Exception("Not implemented yet")
@@ -542,9 +543,17 @@ class Pascal3D():
         return os.path.join(self.location, 'Images')
 
     def stored_split_index(self):
-        return os.path.join(self.location, 'saved_splits')
+        if self.voc_train:
+            split_name = 'saved_splits_pascal.txt'
+        else:
+            split_name = 'saved_splits.txt'
+        return os.path.join(self.location, split_name)
 
     def get_split(self, validation_split_size=0.3):
+        stored_indices_path = self.stored_split_index()
+        if os.path.exists(stored_indices_path):
+            with open(stored_indices_path, 'r') as f:
+                return load_split(f)
         split_names = ['train', 'val']
         splits = []
         num_files = 0
@@ -566,15 +575,27 @@ class Pascal3D():
                         img_path = os.path.join(str(cls) + '_imagenet', l + '.JPEG')
                         split.append(img_path)
             splits.append(split)
+        split_pascal = []
+        for directory in os.listdir(self.image_set_path()):
+            if directory.lower().find('pascal') != -1:
+                for fname in os.listdir(os.path.join(self.image_set_path(), directory)):
+                    split_pascal.append(os.path.join(directory, fname))
         test_split = splits[1]
         rest = splits[0]
+        rest = sorted(rest)
         val_idx = (np.arange(len(rest)*validation_split_size)/validation_split_size).astype(np.int)
         val_split = [rest[i] for i in val_idx]
-        train_split = list(set(rest)-set(val_split))
+        train_split = sorted(list(set(rest)-set(val_split)))
+        if self.voc_train:
+            train_split = train_split + split_pascal
 
-        return get_dataset_indices_from_imagefilenames([train_split, val_split, test_split], self.json_annotation_path(), self.stored_split_index())
+        ret = get_dataset_indices_from_imagefilenames([train_split, val_split, test_split], self.json_annotation_path())
+        with open(stored_indices_path, 'w') as f:
+            save_split(f, ret)
+        return ret
 
-    def get_train(self, augmentation=None):
+
+    def get_train(self, augmentation=False):
         if self.train_all:
             return self.get_subset(self.train_idx + self.val_idx, augmentation)
         else:
@@ -582,9 +603,9 @@ class Pascal3D():
 
     def get_eval(self):
         if self.train_all:
-            return self.get_subset(self.test_idx, None)
+            return self.get_subset(self.test_idx, False)
         else:
-            return self.get_subset(self.val_idx, None)
+            return self.get_subset(self.val_idx, False)
 
     def get_cad(self, class_idx, cad_idx):
         class_str = pascal3d_idx_to_str(class_idx)
@@ -597,7 +618,7 @@ class Pascal3D():
         if self.use_warp:
             return Pascal3DSubsetWarp(self.json_annotation_path(), self.image_set_path(), index, self.image_out_size, augmentation)
         else:
-            assert(augmentation is None)
+            assert(augmentation is False)
             return Pascal3DSubsetCrop(self.json_annotation_path(), self.image_set_path(), index, self.image_out_size)
 
 class Pascal3DSubsetWarp(Dataset):
@@ -633,7 +654,7 @@ class Pascal3DSubsetWarp(Dataset):
         principal_point = np.array(obj[DICT_POINT])
         distance = obj[DICT_DISTANCE]
 
-        if self.augmentation is not None:
+        if self.augmentation:
             flip = np.random.randint(2)
             if flip==1:
                 angle *= np.array([-1.0, 1.0, -1.0])
@@ -736,10 +757,15 @@ class Pascal3DSubsetCrop(Dataset):
 
 
 
-def get_dataset_indices_from_imagefilenames(splits, json_annotation_path, stored_indices):
-    if os.path.exists(stored_indices):
-        with open(stored_indices, 'r') as f:
-            return load_split(f)
+def get_dataset_indices_from_imagefilenames(splits, json_annotation_path):
+    for i in range(len(splits)):
+        for j in range(len(splits)):
+            if i != j:
+                intersect = set(splits[i]).intersection(set(splits[j]))
+                if len(intersect) != 0:
+                    print('split {} and {} have filename intersection {}'.format(i, j, intersect))
+                    raise Exception('train/val/test filename split intersects')
+
     resmap = {}
     for idx in range(len(os.listdir(json_annotation_path))):
         sample_file = os.path.join(json_annotation_path, "{}.json".format(idx))
@@ -750,14 +776,19 @@ def get_dataset_indices_from_imagefilenames(splits, json_annotation_path, stored
         idx_for_file.append(idx)
         resmap[filename] = idx_for_file
     ret = []
-    for s in splits:
+    for split in splits:
         split_ret = []
-        for f in s:
-            to_add = resmap.get(f, [])
-            split_ret += resmap.get(f, [])
-        ret.append(split_ret)
-    with open(stored_indices, 'w') as f:
-        save_split(f, ret)
+        for filename in split:
+            to_add = resmap.get(filename, [])
+            split_ret += to_add
+        ret.append(sorted(split_ret))
+    for i in range(len(ret)):
+        for j in range(len(ret)):
+            if i != j:
+                intersect = set(ret[i]).intersection(set(ret[j]))
+                if len(intersect) != 0:
+                    print('split {} and {} have index intersection {}'.format(i, j, intersect))
+                    raise Exception('train/val/test index split intersects')
     return ret
 
 def save_split(f, splits):

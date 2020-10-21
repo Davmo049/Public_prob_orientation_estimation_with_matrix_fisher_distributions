@@ -268,8 +268,8 @@ class UPNA():
         if not os.path.exists(self.dataset_preprocessed):
             dataset_raw = os.path.join(dataset_path, RAW_DIR)
             create_preprocessed_dir(dataset_raw, self.dataset_preprocessed)
-        train_users = ['User_0{}'.format(i+1) for i in range(8)]
-        val_users = ['User_09', 'User_10']
+        train_users = ['User_01', 'User_02', 'User_03', 'User_04', 'User_05', 'User_06']
+        val_users = ['User_07', 'User_08', 'User_09', 'User_10']
         def get_samples_for_users(base_folder, users):
             ret = []
             for user in users:
@@ -379,7 +379,7 @@ class UpnaSubset(torch.utils.data.Dataset):
 
 
 def main():
-    dataset_dir = 'datasets'
+    dataset_dir = 'datasets' # TODO change to where datasets are stored
     x = UPNA(dataset_dir)
     ds = x.get_train()
     for idx_i in range(28, len(ds)):

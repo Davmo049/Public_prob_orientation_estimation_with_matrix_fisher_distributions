@@ -16,7 +16,7 @@ from logger_metric import get_errors
 
 def loss_func(net_out, R):
     A = net_out.view(-1,3,3)
-    loss_v = loss.KL_approx(A, R)
+    loss_v = loss.KL_Fisher(A, R)
     if loss_v is None:
         Rest = torch.unsqueeze(torch.eye(3,3, device=R.device, dtype=R.dtype), 0)
         Rest = torch.repeat_interleave(Rest, R.shape[0], 0)
@@ -40,16 +40,16 @@ class ListSampler(torch.utils.data.sampler.Sampler):
 
 
 def main():
-    net_path = 'logs/Modelnet/train'
+    net_path = 'logs/modelnet/modelnet_int_norm'
     dump_path = 'output_data/modelnet_errors'
-    dataset_location = 'datasets'
+    dataset_location = 'datasets' # TODO update to dataset path
     device = torch.device('cpu')
     dataset = ModelNetSo3.ModelNetSo3(dataset_location)
     dataset_eval = dataset.get_eval()
 
     base = resnet101()
     model = ResnetHead(base, 10, 32, 512, 9)
-    loggers = logger.Logger(net_path, ModelNetSo3.ModelNetSo3, 0, dataset, load=True)
+    loggers = logger.Logger(net_path, ModelNetSo3.ModelNetSo3, load=True)
     loggers.load_network_weights(49, model, device)
     model.eval()
 
@@ -63,7 +63,7 @@ def main():
             batch_size=32,
             drop_last=False)
 
-    stats = logger.SubsetLogger(None, None, [], 0, False) # not intended use, need to look over how to set up logger differently
+    stats = logger.SubsetLogger(None, None, 0, False) # not intended use, need to look over how to set up logger differently
     i = 0
     for batch in tqdm.tqdm(dataloader):
         # if i > 1:

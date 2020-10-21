@@ -17,6 +17,7 @@ def load_tensorboard_csv(f):
 
 
 def main():
+    # export tensorboard data to logging_csv before running
     logfiles = ['Median', 'loss']
     splits = ['train', 'test']
     fig, ax1 = plt.subplots()
@@ -30,7 +31,6 @@ def main():
     all_plots = []
     for split, linetype in zip(splits, ('', '--')):
         for logfile, color,ax in zip(logfiles, ('r', 'b'), (ax1, ax2)):
-            # files in logging_csv are "downloaded" csv files from tensorboard application
             filename = os.path.join('logging_csv', split, '{}.csv'.format(logfile))
             with open(filename, 'r') as f:
                 step, value = load_tensorboard_csv(f)

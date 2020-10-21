@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from enum import IntEnum
 
-dataset_dir = 'datasets' # change to directory where data is
+dataset_dir = 'dataset' # change to where you store datasets
 
 test_name = 'test_20V.Rawjpg.lmdb'
 train_name = 'train_100V.Rawjpg.lmdb'
