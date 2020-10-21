@@ -1,6 +1,10 @@
-SETTING UP:
+![](/github_images/splash_image.png "")
+
+# Introduction
+
 This repository should include all code required to reproduce the results for "Using Matrix Fisher Distribution to Estimate 3DRotation Probabilities with Deep Learning"
 
+# Setting up:
 This code uses conda for its environment. To setup this do
 1. Download conda
 2. Create the environment in environment.yml
@@ -21,7 +25,7 @@ This code uses datasets. To get them do:
   * UPNA
     * http://www.unavarra.es/gi4e/databases/hpdb
 
-RUNNING CODE:
+# Running code:
 To train models run $python main.py
 this program takes two arguments
 'run_name': a string which will be used for naming your run when logging
@@ -32,6 +36,14 @@ These logs end up in logs/pascal, logs/modelnet or logs/upna
 The training writes the loss in the terminal each epoch as well.
 
 You should get similar performance to what we reported in paper
+## Expected Results
+![](/github_images/PascalTable.png "")
+
+Expected performance for Pascal3D+
+
+![](/github_images/PascalTable2.png "")
+
+Expected performance for Pascal3D+ top are median error in degrees, bottom in Acc@30 degrees
 
 run unittests by running 
 python -m unitttest
