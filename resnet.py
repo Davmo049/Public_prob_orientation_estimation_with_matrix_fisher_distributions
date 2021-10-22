@@ -1,3 +1,5 @@
+# mainly from torchvision resnet implementation
+
 import torch
 import torch.nn as nn
 try:
