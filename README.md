@@ -2,6 +2,7 @@
 
 # NOTE
 This paper was accepted to NeurIPS 2020 please cite
+```
 @inproceedings{NEURIPS2020_33cc2b87, 
  author = {Mohlin, David and Sullivan, Josephine and Bianchi, G\'{e}rald},
  booktitle = {Advances in Neural Information Processing Systems},
@@ -13,6 +14,7 @@ This paper was accepted to NeurIPS 2020 please cite
  volume = {33},
  year = {2020}
 }
+```
 The NeurIPS paper is slightly different than the arxiv paper, mainly how we approximate the hypergeometric normalization constant.
 
 The Pascal3D+ dataset contains samples from imagenet and pascalVOC. In "Implicit-PDF: Non-Parametric Representation of Probability Distributions on the Rotation Manifold" they notice that we use the imagenet validation split, while we other works use the Pascal validation split. They run our method with the common datset split and report that our method has average performance of Acc@30: 82.5% and median error of 11.5 degrees. We might rerun experiments and post an update here. In the meantime cite the performance of this method on Pascal3D+ as the numers from "Implicit-PDF: Non-Parametric Representation of Probability Distributions on the Rotation Manifold".
